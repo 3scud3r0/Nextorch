@@ -1,0 +1,7 @@
+include README.md pyproject.toml
+recursive-include docs *.md *.txt
+recursive-include examples *.py *.json *.smt2 *.ows
+recursive-include scripts *.sh
+recursive-include requirements *.lock
+recursive-include tests *.py
+recursive-include nextorch/orange/icons *.svg
