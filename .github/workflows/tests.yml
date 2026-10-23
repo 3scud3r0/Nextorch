@@ -1,0 +1,38 @@
+name: Nextorch
+on: [push, pull_request]
+jobs:
+  core:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python: ['3.11', '3.12']
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '${{ matrix.python }}'
+      - run: python -m pip install --index-url https://download.pytorch.org/whl/cpu torch==2.5.1
+      - run: python -m pip install '.[dev]'
+      - run: ruff check nextorch tests examples
+      - run: python -m pytest --ignore=tests/test_widgets.py --ignore=tests/test_orange_bridge.py
+  integration:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: sudo apt-get update && sudo apt-get install -y zstd libegl1 libopengl0
+      - run: bash scripts/setup.sh
+      - run: bash scripts/test.sh -q
+      - run: NEXTORCH_LEAN="$GITHUB_WORKSPACE/../.tools/lean/bin/lean" .venv/bin/nextorch demo --lean
+      - run: .venv/bin/python examples/iris_workflow.py
+      - run: .venv/bin/python -m build
+      - uses: actions/upload-artifact@v4
+        with:
+          name: nextorch-validation
+          path: |
+            artifacts/demo
+            artifacts/iris
+            artifacts/coverage.json
+            dist
