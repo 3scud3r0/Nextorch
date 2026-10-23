@@ -260,7 +260,7 @@ class OrangeBridge:
     def table_to_tensors(table: Any) -> Tuple[torch.Tensor, Optional[torch.Tensor]]:
         if not ORANGE_AVAILABLE:
             raise RuntimeError("Orange Data Mining não está instalado no ambiente.")
-        
+
         X = torch.tensor(table.X, dtype=torch.float32)
         y = None
         if table.Y is not None and len(table.Y.shape) > 0:
@@ -271,7 +271,7 @@ class OrangeBridge:
     def tensors_to_table(X: torch.Tensor, feature_names: List[str]) -> Any:
         if not ORANGE_AVAILABLE:
             raise RuntimeError("Orange Data Mining não está instalado no ambiente.")
-        
+
         variables = [ContinuousVariable(name) for name in feature_names]
         domain = Domain(variables)
         return Table.from_numpy(domain, X.detach().cpu().numpy())
@@ -284,12 +284,12 @@ class ManifoldAnalyzer:
         N, D = X.shape
         batch = X[:min(N, 512)]
         batch_centered = batch - batch.mean(dim=0, keepdim=True)
-        
+
         # SVD para extração da variedade latente
         _, S, _ = torch.svd(batch_centered)
         var_explained = torch.cumsum(S**2, dim=0) / torch.sum(S**2)
         intrinsic_dim = int((var_explained < 0.95).sum().item()) + 1
-        
+
         spectral_decay = (S[0] / (S[-1] + 1e-7)).item()
         return {
             "n_samples": N,
@@ -312,10 +312,10 @@ class ZeroCostVerifier:
         out = model(x)
         if isinstance(out, tuple):
             out = out[0]
-            
+
         dummy_grad = torch.randn_like(out)
         grads = torch.autograd.grad(out, x, grad_outputs=dummy_grad, retain_graph=False, create_graph=False)[0]
-        
+
         # Razão de preservação de norma do Jacobiano
         norm_in = dummy_grad.norm().item() + 1e-8
         norm_out = grads.norm().item() + 1e-8
@@ -327,21 +327,21 @@ class ZeroCostVerifier:
         """Calcula conservação de fluxo sináptico através das camadas."""
         model.eval()
         model.zero_grad()
-        
+
         # Passagem com matriz unitária para testar capacidade estrutural
         x = torch.ones(*input_shape)
         out = model(x)
         if isinstance(out, tuple):
             out = out[0]
-            
+
         metric = out.sum()
         metric.backward()
-        
+
         total_synflow = 0.0
         for param in model.parameters():
             if param.grad is not None:
                 total_synflow += (param.grad * param).abs().sum().item()
-        
+
         model.zero_grad()
         return total_synflow
 
@@ -392,7 +392,7 @@ class NextorchReasoner(nn.Module):
         super().__init__()
         self.d_model = d_model
         self.thought_steps = thought_steps
-        
+
         self.embedding = nn.Embedding(vocab_size, d_model)
         self.thought_cell = LatentThoughtBlock(d_model)
         self.value_head = nn.Linear(d_model, 1)  # Estima estabilidade da inferência
@@ -403,10 +403,10 @@ class NextorchReasoner(nn.Module):
     def forward(self, x: torch.Tensor, capture_trajectory: bool = False):
         batch_size = x.size(0)
         h0 = self.embedding(x).mean(dim=1)
-        
+
         h_current = h0
         trajectory = []
-        
+
         # Test-Time Compute: iterações contínuas na variedade
         for step in range(self.thought_steps):
             h_current = self.thought_cell(h_current, h0)
@@ -415,7 +415,7 @@ class NextorchReasoner(nn.Module):
 
         logits = self.policy_head(h_current)
         uncertainty = torch.sigmoid(self.value_head(h_current))
-        
+
         if capture_trajectory:
             return logits, uncertainty, trajectory
         return logits, uncertainty
@@ -434,11 +434,11 @@ class IntegratedSAE(nn.Module):
         self.d_model = d_model
         self.n_features = n_features
         self.target_l0 = target_l0
-        
+
         self.b_dec = nn.Parameter(torch.zeros(d_model))
         self.encoder = nn.Linear(d_model, n_features)
         self.decoder = nn.Linear(n_features, d_model, bias=False)
-        
+
         # Controlador PID de esparsidade
         self.l1_coeff = 1e-3
         self.kp = 1e-5
@@ -446,7 +446,7 @@ class IntegratedSAE(nn.Module):
         self.kd = 1e-6
         self.integral_error = 0.0
         self.last_error = 0.0
-        
+
         self.normalize_decoder()
 
     @torch.no_grad()
@@ -464,7 +464,7 @@ class IntegratedSAE(nn.Module):
         error = current_l0 - self.target_l0
         self.integral_error += error
         derivative = error - self.last_error
-        
+
         adjustment = (self.kp * error) + (self.ki * self.integral_error) + (self.kd * derivative)
         self.l1_coeff = max(1e-5, min(0.1, self.l1_coeff + adjustment))
         self.last_error = error
@@ -473,7 +473,7 @@ class IntegratedSAE(nn.Module):
         recon_loss = nn.functional.mse_loss(x_recon, x)
         l0_pseudo = features.sign().sum(dim=-1).mean().item()
         self.update_pid(l0_pseudo)
-        
+
         sparsity_loss = self.l1_coeff * features.norm(p=1, dim=-1).mean()
         return recon_loss + sparsity_loss
 
@@ -503,18 +503,18 @@ class FormalVerificationGateway:
     def verify_deduction(premises: List[Tuple[int, int]], query_src: int, query_target: int) -> bool:
         solver = z3.Solver()
         variables = {i: z3.Bool(f"P_{i}") for i in range(16)}
-        
+
         # Premissa inicial verdadeira
         solver.add(variables[query_src] == True)
-        
+
         # Axiomas de implicação: p -> q
         for src, dst in premises:
             solver.add(z3.Implies(variables[src], variables[dst]))
-            
+
         # Teste por Refutação Formal: Premises ∧ ¬Alvo
         solver.push()
         solver.add(z3.Not(variables[query_target]))
-        
+
         # UNSAT significa que a refutação falhou => Teorema é estritamente verdadeiro
         status = solver.check()
         solver.pop()
@@ -531,7 +531,7 @@ class Net2NetExpansion:
         old_out, old_in = layer.weight.shape
         if new_features <= old_out:
             return layer
-            
+
         new_layer = nn.Linear(old_in, new_features, bias=layer.bias is not None)
         with torch.no_grad():
             new_layer.weight[:old_out] = layer.weight
@@ -539,7 +539,7 @@ class Net2NetExpansion:
             remainder = new_features - old_out
             idx = torch.randint(0, old_out, (remainder,))
             new_layer.weight[old_out:] = layer.weight[idx] + torch.randn_like(layer.weight[idx]) * 1e-4
-            
+
             if layer.bias is not None:
                 new_layer.bias[:old_out] = layer.bias
                 new_layer.bias[old_out:] = layer.bias[idx]
@@ -554,29 +554,29 @@ class NextorchEngine:
     def __init__(self, vocab_size: int = 16, d_model: int = 64):
         self.vocab_size = vocab_size
         self.d_model = d_model
-        
+
         self.reasoner = NextorchReasoner(vocab_size=vocab_size, d_model=d_model, thought_steps=3)
         self.sae = IntegratedSAE(d_model=d_model, n_features=d_model * 4, target_l0=8.0)
-        
+
         self.opt_model = optim.AdamW(self.reasoner.parameters(), lr=1e-3, weight_decay=1e-4)
         self.opt_sae = optim.Adam(self.sae.parameters(), lr=5e-4)
-        
+
         self.verified_replay_buffer: List[Tuple[torch.Tensor, torch.Tensor]] = []
 
     def execute_self_improvement_cycle(self, n_problems: int = 5):
         print("\n" + "="*50)
         print("INICIANDO CICLO DE AUTOAPERFEIÇOAMENTO RECURSIVO")
         print("="*50)
-        
+
         newly_verified = 0
-        
+
         for p_idx in range(n_problems):
             # 1. Formulação do Problema Lógico
             n_steps = random.randint(2, 3)
             chain = random.sample(range(self.vocab_size), n_steps + 1)
             premises = [(chain[i], chain[i+1]) for i in range(len(chain) - 1)]
             start_var, expected_target = chain[0], chain[-1]
-            
+
             # Tensor de entrada: [start_var, p1_a, p1_b, p2_a, p2_b, ...]
             input_seq = [start_var]
             for p in premises:
@@ -584,18 +584,18 @@ class NextorchEngine:
             while len(input_seq) < 9:
                 input_seq.extend([0, 0])
             input_tensor = torch.tensor([input_seq[:9]], dtype=torch.long)
-            
+
             # 2. Inferência com Test-Time Compute (TTC)
             self.reasoner.eval()
             with torch.no_grad():
                 logits, uncertainty, trajectory = self.reasoner(input_tensor, capture_trajectory=True)
                 pred_target = torch.argmax(logits, dim=-1).item()
-                
+
             # 3. Auditoria Mecanicista via SAE (Sem Latent Drift)
             final_thought = trajectory[-1]
             x_recon, features = self.sae(final_thought)
             thought_translation = decode_sae_features(features)
-            
+
             # Treino contínuo do SAE nas ativações geradas (coevolução)
             self.sae.train()
             self.opt_sae.zero_grad()
@@ -606,12 +606,12 @@ class NextorchEngine:
 
             # 4. Gateway de Verificação Formal Rígida (Z3)
             is_valid = FormalVerificationGateway.verify_deduction(premises, start_var, pred_target)
-            
+
             status_symbol = "✔ UNSAT (VERDADE ABSOLUTA)" if is_valid else "✖ FALÁCIA / ALUCINAÇÃO"
             print(f"\n[Problema #{p_idx+1}] Proposta: P_{pred_target} | Verificador: {status_symbol}")
             print(f" ├─ Auditoria SAE: {', '.join(thought_translation)}")
             print(f" └─ Incerteza do Modelo: {uncertainty.item():.4f} | Coeficiente L1 SAE: {self.sae.l1_coeff:.6f}")
-            
+
             # 5. Admissão Segura no Dataset
             if is_valid:
                 target_tensor = torch.tensor([pred_target], dtype=torch.long)
@@ -626,7 +626,7 @@ class NextorchEngine:
             print("\n[Retreino]: Atualizando pesos do Reasoner nos dados formalmente certificados...")
             self.reasoner.train()
             total_loss = 0.0
-            
+
             for x_b, y_b in self.verified_replay_buffer:
                 self.opt_model.zero_grad()
                 pred_logits, _ = self.reasoner(x_b)
@@ -634,7 +634,7 @@ class NextorchEngine:
                 loss.backward()
                 self.opt_model.step()
                 total_loss += loss.item()
-                
+
             avg_loss = total_loss / len(self.verified_replay_buffer)
             print(f"[Retreino Concluído]: Perda Média = {avg_loss:.4f}")
 
@@ -672,10 +672,10 @@ if ORANGE_AVAILABLE:
             if data is not None:
                 X, _ = OrangeBridge.table_to_tensors(data)
                 meta = ManifoldAnalyzer.compute_spectral_signature(X)
-                
+
                 self.lbl_samples.setText(f"Amostras: {meta['n_samples']} | Atributos: {meta['input_dim']}")
                 self.lbl_intrinsic.setText(f"Dimensão Intrínseca: {meta['intrinsic_dim']}")
-                
+
                 # Teste instantâneo de modelo protótipo
                 proto_model = nn.Sequential(nn.Linear(meta['input_dim'], 64), nn.GELU(), nn.Linear(64, 2))
                 isometry = ZeroCostVerifier.check_dynamic_isometry(proto_model, (16, meta['input_dim']))
@@ -688,11 +688,11 @@ if ORANGE_AVAILABLE:
 if __name__ == "__main__":
     # Teste de verificação sintética sem interface gráfica
     engine = NextorchEngine(vocab_size=16, d_model=64)
-    
+
     # 1. Análise de Custo Zero
     dummy_input_shape = (8, 9)
     iso_score = ZeroCostVerifier.check_dynamic_isometry(engine.reasoner, dummy_input_shape)
     print(f"[Zero-Cost Check]: Preservação de Isometria Dinâmica = {iso_score:.4f}")
-    
+
     # 2. Execução do Ciclo Recursivo Integrado
     engine.execute_self_improvement_cycle(n_problems=4)
